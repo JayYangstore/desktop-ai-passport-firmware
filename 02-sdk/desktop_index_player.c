@@ -19,7 +19,6 @@
 
 #include "bsp_button.h"
 #include "bsp_display.h"
-#include "bsp_wifi.h"           // 假设 BSP 有 WiFi 接口（如果没有要自己写）
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
@@ -324,22 +323,25 @@ static esp_err_t http_fetch_index(void) {
     return err;
 }
 
+// 后台 fetch 任务（C 不支持 lambda，独立函数）
+static void fetch_task(void *arg) {
+    esp_err_t err = wifi_init_and_connect();
+    if (err == ESP_OK) {
+        err = http_fetch_index();
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Fetch failed, will use cache");
+            s_state = DIP_STATE_FETCH_FAILED;
+        } else {
+            s_state = DIP_STATE_READY;
+        }
+    }
+    vTaskDelete(NULL);
+}
+
 esp_err_t dip_fetch_remote_async(void) {
     // 在新 task 里跑（不阻塞按键）
     TaskHandle_t task;
-    xTaskCreate([](void* arg) {
-        esp_err_t err = wifi_init_and_connect();
-        if (err == ESP_OK) {
-            err = http_fetch_index();
-            if (err != ESP_OK) {
-                ESP_LOGW(TAG, "Fetch failed, will use cache");
-                s_state = DIP_STATE_FETCH_FAILED;
-            } else {
-                s_state = DIP_STATE_READY;
-            }
-        }
-        vTaskDelete(NULL);
-    }, "dip_fetch", 8192, NULL, 5, &task);
+    xTaskCreate(fetch_task, "dip_fetch", 8192, NULL, 5, &task);
     return ESP_OK;
 }
 
