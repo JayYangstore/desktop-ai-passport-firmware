@@ -1,0 +1,10 @@
+# 大文件 / 临时
+sdk-source/
+tools/desktop_index.json
+tools/.deploy_payload.json
+*.bin
+.DS_Store
+__pycache__/
+*.pyc
+.idea/
+.vscode/

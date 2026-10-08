@@ -1,0 +1,162 @@
+# GitHub Actions Workflow: 云端构建 AI Passport 桌面索引固件
+#
+# 触发条件:
+#   1. push 到 main 分支（修改 C 源码后自动构建）
+#   2. 手动触发 (workflow_dispatch)
+#   3. 每天凌晨 4 点（cron）- 自动重建（确保 SDK 最新）
+#
+# 工作流:
+#   1. 检出代码
+#   2. 装 ESP-IDF 5.5.3
+#   3. 把最新的 desktop_index.json 转成 C 数组嵌入（v2 模式下其实没用，运行时拉）
+#   4. idf.py build
+#   5. 合并固件 (esptool merge-bin) → merged-binary.bin
+#   6. 上传 artifact
+#   7. 创建 GitHub Release (optional)
+#
+# 烧录方式:
+#   - 老板下载 merged-binary.bin
+#   - 用 https://ai-passport.folotoy.cn/tools/web-flasher/ 烧
+#   - 或者本地: esptool.py write_flash 0x0 merged-binary.bin
+
+name: Build AI Passport Firmware
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sdk-source/**'
+      - '02-sdk/**'
+      - '.github/workflows/build-firmware.yml'
+  workflow_dispatch:
+  schedule:
+    # 每天 UTC 20:00 = 北京时间凌晨 4:00
+    - cron: '0 20 * * *'
+
+env:
+  ESP_IDF_VERSION: v5.5.3
+  ESP_TARGET: esp32c3
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: 🔧 Install ESP-IDF toolchain
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: ${{ env.ESP_IDF_VERSION }}
+          target: ${{ env.ESP_TARGET }}
+
+      - name: 📋 Prepare build directory
+        run: |
+          # 把我们的 C 源码复制到 sdk-source/main/ 下
+          # （官方 main.c 是 demo，我们整个替换它的入口）
+          cp 02-sdk/desktop_index_player.c sdk-source/main/desktop_index_player.c
+          cp 02-sdk/desktop_index_player.h sdk-source/main/desktop_index_player.h
+
+          # 写一个 main_entry.c 替换官方 demo 入口
+          cat > sdk-source/main/main_entry.c << 'EOF'
+          // main_entry.c —— 桌面索引玩法的入口
+          // 替换官方 demo 菜单，直接进桌面索引
+          #include "bsp_display.h"
+          #include "bsp_button.h"
+          #include "desktop_index_player.h"
+          #include "lvgl.h"
+          #include "esp_log.h"
+          #include "freertos/FreeRTOS.h"
+          #include "freertos/task.h"
+
+          static const char *TAG = "main";
+
+          void app_main(void) {
+              ESP_LOGI(TAG, "Booting desktop_index_player...");
+
+              // 初始化 BSP
+              ESP_ERROR_CHECK(bsp_display_init());
+              lv_display_t *disp = bsp_lvgl_init();
+
+              // 初始化玩法
+              ESP_ERROR_CHECK(dip_init());
+
+              // 后台 task: 启动 WiFi 拉取
+              xTaskCreate([](void* arg) {
+                  if (dip_is_wifi_provisioned()) {
+                      ESP_LOGI(TAG, "WiFi provisioned, fetching index...");
+                      dip_fetch_remote_async();
+                  } else {
+                      ESP_LOGW(TAG, "No WiFi config, using cache only");
+                  }
+                  vTaskDelete(NULL);
+              }, "dip_fetch_start", 4096, NULL, 5, NULL);
+
+              // 主循环（在 LVGL 任务里跑按键消费）
+              dip_main_loop();
+          }
+          EOF
+
+          echo "✅ Build directory prepared"
+
+      - name: 🔨 Build firmware
+        working-directory: sdk-source
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py set-target esp32c3
+          idf.py build
+
+      - name: 📦 Merge firmware to single binary
+        working-directory: sdk-source
+        run: |
+          . $IDF_PATH/export.sh
+
+          # 合并 bootloader + partition table + app → 单文件可 0x0 烧录
+          python3 $IDF_PATH/components/esptool_py/esptool/esptool.py \
+            --chip esp32c3 \
+            merge_bin \
+            --output ../merged-binary.bin \
+            --flash_mode dio \
+            --flash_freq 80m \
+            --flash_size 8MB \
+            0x0 build/bootloader/bootloader.bin \
+            0x8000 build/partition_table/partition-table.bin \
+            0x10000 build/ai_passport.bin
+
+          ls -lh ../merged-binary.bin
+
+      - name: 📤 Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-passport-desktop-index-firmware
+          path: merged-binary.bin
+          retention-days: 90
+
+      - name: 🚀 Create Release (on push)
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: merged-binary.bin
+          tag_name: firmware-${{ github.run_number }}
+          name: "AI Passport Desktop Index v${{ github.run_number }}"
+          body: |
+            自动构建的 AI Passport 桌面索引固件
+
+            **刷机方法**:
+            1. 下载 `merged-binary.bin`
+            2. 打开 https://ai-passport.folotoy.cn/tools/web-flasher/
+            3. 选择文件 → 连接 AI Passport → 烧录
+
+            **首次使用**:
+            1. 烧完重启设备
+            2. 长按 OK 进入配网模式（如果 NVS 没存过 WiFi）
+            3. 连接设备热点 → 浏览器填 WiFi 密码
+            4. 设备自动拉 GitHub Pages 上的 desktop_index.json
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

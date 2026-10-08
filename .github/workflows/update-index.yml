@@ -1,0 +1,186 @@
+# GitHub Actions Workflow: 自动扫描桌面 → 推送 GitHub Pages
+#
+# ⚠️ 重要：本 workflow 不扫描你的本地 Mac！
+# 因为 GitHub Actions 跑在云端 Linux 容器里，看不到你的 ~/Desktop。
+#
+# 它能做两件事:
+#   1. 触发 Mac 上的扫描脚本（用 repository_dispatch 通知 Mac 跑）
+#   2. 维护一个"手动上传"的 JSON（老板可以下载 Mac 生成的 desktop_index.json，
+#      放到仓库的 data/ 目录，下次 cron 触发时会自动发布到 GitHub Pages）
+#
+# 更优方案：老板的 Mac 上跑 deploy_to_github.py（前面那个脚本），触发方式:
+#   - macOS launchd（系统启动时） + 手动快捷键
+#   - 或者：用 ngrok/cloudflared 把本机 8000 端口暴露出去，
+#           GitHub Actions 定期 curl 触发
+#
+# 现实方案（v2 阶段）：
+#   老板 Mac 上配一个快捷键 / Alfred workflow，一键跑 deploy_to_github.py
+#   哪天想立刻更新，按一下就行（10 秒）
+
+name: Update Desktop Index
+
+on:
+  # 每天北京时间凌晨 3 点（UTC 19:00）
+  schedule:
+    - cron: '0 19 * * *'
+
+  # 手动触发（老板点 GitHub Actions 网页的 "Run workflow"）
+  workflow_dispatch:
+    inputs:
+      source:
+        description: 'JSON 来源（默认从 data/ 目录读）'
+        required: false
+        default: 'data'
+        type: choice
+        options:
+          - data
+          - skip
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          # 必须 fetch tags，否则下面 git history 命令可能挂
+          fetch-depth: 10
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 🔍 Validate JSON file
+        env:
+          SOURCE: ${{ github.event.inputs.source || 'data' }}
+        run: |
+          if [ "$SOURCE" = "skip" ]; then
+            echo "⏭️  跳过发布（手动选了 skip）"
+            exit 0
+          fi
+
+          JSON_FILE="$SOURCE/desktop_index.json"
+
+          if [ ! -f "$JSON_FILE" ]; then
+            echo "❌ 找不到 $JSON_FILE"
+            echo "   解决方法："
+            echo "   1. 在 Mac 上跑 python3 ~/Downloads/Hermes/ai-passport/tools/desktop_index_scanner.py"
+            echo "   2. 把生成的 desktop_index.json 上传到仓库的 data/ 目录"
+            echo "   3. 再触发本 workflow"
+            exit 1
+          fi
+
+          # 校验 JSON 合法性 + 大小限制
+          SIZE=$(wc -c < "$JSON_FILE" | tr -d ' ')
+          SIZE_KB=$((SIZE / 1024))
+          echo "📊 JSON 文件: $JSON_FILE"
+          echo "   大小: ${SIZE} bytes (${SIZE_KB} KB)"
+
+          if [ "$SIZE_KB" -gt 50 ]; then
+            echo "⚠️  警告: JSON > 50KB，建议修改 scanner 减小 MAX_ENTRIES"
+            # 不阻断，警告而已
+          fi
+
+          python3 -c "
+          import json
+          with open('$JSON_FILE', encoding='utf-8') as f:
+              data = json.load(f)
+          print(f\"   条目数: {data['total']}\")
+          print(f\"   生成时间: {data.get('generated_at_human', 'unknown')}\")
+          print(f\"   Host: {data.get('host', 'unknown')}\")
+          "
+
+      - name: 📤 Publish to GitHub Pages (root)
+        env:
+          SOURCE: ${{ github.event.inputs.source || 'data' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "$SOURCE" = "skip" ]; then
+            exit 0
+          fi
+
+          JSON_FILE="$SOURCE/desktop_index.json"
+          TARGET_FILE="desktop_index.json"
+
+          # 读远程文件 sha（用于 PUT 冲突检测）
+          REMOTE_SHA=$(gh api repos/${{ github.repository }}/contents/$TARGET_FILE --jq '.sha' 2>/dev/null || echo "")
+
+          # base64 编码
+          CONTENT_B64=$(base64 -w 0 < "$JSON_FILE")
+
+          # 构造 JSON payload
+          if [ -n "$REMOTE_SHA" ]; then
+            SHA_FIELD=",\"sha\": \"$REMOTE_SHA\""
+          else
+            SHA_FIELD=""
+          fi
+
+          COMMIT_MSG="chore(auto): update desktop_index.json - $(date -u +'%Y-%m-%d %H:%M UTC')"
+
+          # 写到临时文件再 PUT（避免命令行长度限制）
+          cat > /tmp/payload.json << EOF
+          {
+            "message": "$COMMIT_MSG",
+            "content": "$CONTENT_B64",
+            "branch": "main"$SHA_FIELD
+          }
+          EOF
+
+          gh api \
+            --method PUT \
+            repos/${{ github.repository }}/contents/$TARGET_FILE \
+            --input /tmp/payload.json
+
+          rm /tmp/payload.json
+
+      - name: ✅ Verify published
+        env:
+          SOURCE: ${{ github.event.inputs.source || 'data' }}
+        run: |
+          if [ "$SOURCE" = "skip" ]; then
+            exit 0
+          fi
+
+          # 等 3 秒让 CDN 生效
+          sleep 3
+
+          PAGES_URL="https://jayyangstore.github.io/desktop-ai-passport/desktop_index.json"
+
+          echo "🔍 验证 GitHub Pages 可访问..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$PAGES_URL")
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ GitHub Pages 200 OK"
+            echo "   URL: $PAGES_URL"
+
+            # 抽几个字段验证内容
+            curl -s "$PAGES_URL" | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          print(f\"   条目数: {data['total']}\")
+          print(f\"   生成时间: {data.get('generated_at_human', 'unknown')}\")
+          print(f\"   最新 3 条:\")
+          for e in data['entries'][:3]:
+              icon = e.get('i', '📁') or '📁'
+              print(f\"     {icon} {e['n']}\")
+          "
+          else
+            echo "❌ GitHub Pages 返回 $HTTP_CODE"
+            echo "   URL: $PAGES_URL"
+            echo "   排查：Settings → Pages 是否启用？"
+            exit 1
+          fi
+
+      - name: 📊 Summary
+        if: always()
+        run: |
+          echo "## 📊 更新桌面索引" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**触发方式**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**时间**: $(date -u +'%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**来源**: ${{ github.event.inputs.source || 'data' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Pages URL**: https://jayyangstore.github.io/desktop-ai-passport/desktop_index.json" >> $GITHUB_STEP_SUMMARY
