@@ -51,13 +51,15 @@ jobs:
           cp ../02-sdk/main.c main/main.c
           echo "✅ 复制 main.c"
 
-          # 4. 修改 CMakeLists.txt 加入我们的 C 源文件
+          # 4. 修改 CMakeLists.txt 加入我们的 C 源文件 + 启用 HTTP client 组件
           if grep -q "desktop_index_player" main/CMakeLists.txt; then
             echo "✅ CMakeLists.txt 已包含 desktop_index_player"
           else
-            # 在 idf_component_register 之前插入 SRCS 加一行
+            # 加入 desktop_index_player.c
             sed -i 's|SRCS "main.c"|SRCS "main.c"\n         "desktop_index_player.c"|' main/CMakeLists.txt
-            echo "✅ CMakeLists.txt 已加 desktop_index_player.c"
+            # 启用 esp_http_client 组件
+            sed -i 's|REQUIRES bsp bt esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash|REQUIRES bsp bt esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash esp_http_client cJSON json|; s|REQUIRES bsp esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash|REQUIRES bsp esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash esp_http_client cJSON json|' main/CMakeLists.txt
+            echo "✅ CMakeLists.txt 已加 desktop_index_player.c + esp_http_client + cJSON"
           fi
 
       # ⭐ 关键步骤：用 action 的 command 在容器里跑完整 build+merge
