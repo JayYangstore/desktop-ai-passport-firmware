@@ -51,6 +51,15 @@ jobs:
           cp ../02-sdk/main.c main/main.c
           echo "✅ 复制 main.c"
 
+          # 4. 修改 CMakeLists.txt 加入我们的 C 源文件
+          if grep -q "desktop_index_player" main/CMakeLists.txt; then
+            echo "✅ CMakeLists.txt 已包含 desktop_index_player"
+          else
+            # 在 idf_component_register 之前插入 SRCS 加一行
+            sed -i 's|SRCS "main.c"|SRCS "main.c"\n         "desktop_index_player.c"|' main/CMakeLists.txt
+            echo "✅ CMakeLists.txt 已加 desktop_index_player.c"
+          fi
+
       # ⭐ 关键步骤：用 action 的 command 在容器里跑完整 build+merge
       # action 内部：docker run espressif/idf:v5.5.3 /bin/bash -c 'command'
       # command 在容器里执行，路径相对于 path 输入（这里是 sdk-source/）
