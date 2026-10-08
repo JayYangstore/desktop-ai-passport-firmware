@@ -1,5 +1,4 @@
-# 大文件 / 临时
-sdk-source/
+# 临时 / 缓存
 tools/desktop_index.json
 tools/.deploy_payload.json
 *.bin
