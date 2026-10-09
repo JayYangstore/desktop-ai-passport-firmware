@@ -431,7 +431,7 @@ static void detail_show(void) {
         strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M", tm);
     }
 
-    char buf[256];
+    char buf[512];
     snprintf(buf, sizeof(buf),
              "%s %s\n\n"
              "路径: ~/%s\n"
