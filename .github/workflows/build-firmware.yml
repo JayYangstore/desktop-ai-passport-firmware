@@ -78,6 +78,9 @@ jobs:
             idf.py add-dependency "espressif/json__cJSON" || echo "json add-dependency failed, try direct"
             idf.py build
             echo "=== Build success, merging ==="
+            # 用通配符找实际 app bin（项目名 FoloToy-AI-Passport）
+            APP_BIN=$(ls build/*.bin | grep -v bootloader | grep -v partition-table | head -1)
+            echo "app bin: $APP_BIN"
             python3 $IDF_PATH/components/esptool_py/esptool/esptool.py \
               --chip esp32c3 \
               merge_bin \
@@ -87,7 +90,7 @@ jobs:
               --flash_size 8MB \
               0x0 build/bootloader/bootloader.bin \
               0x8000 build/partition_table/partition-table.bin \
-              0x10000 build/ai_passport.bin
+              0x10000 "$APP_BIN"
             ls -lh merged-binary.bin
             cp merged-binary.bin /app/${{ github.repository }}/merged-binary.bin
             echo "=== Merged binary copied to workspace ==="
