@@ -58,8 +58,8 @@ jobs:
             # 加入 desktop_index_player.c
             sed -i 's|SRCS "main.c"|SRCS "main.c"\n         "desktop_index_player.c"|' main/CMakeLists.txt
             # 启用 esp_http_client 组件
-            sed -i 's|REQUIRES bsp bt esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash|REQUIRES bsp bt esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash esp_http_client cJSON json|; s|REQUIRES bsp esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash|REQUIRES bsp esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash esp_http_client cJSON json|' main/CMakeLists.txt
-            echo "✅ CMakeLists.txt 已加 desktop_index_player.c + esp_http_client + cJSON"
+            sed -i 's|REQUIRES bsp bt esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash|REQUIRES bsp bt esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash esp_http_client json|; s|REQUIRES bsp esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash|REQUIRES bsp esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash esp_http_client json|' main/CMakeLists.txt
+            echo "✅ CMakeLists.txt 已加 desktop_index_player.c + esp_http_client + json"
           fi
 
       # ⭐ 关键步骤：用 action 的 command 在容器里跑完整 build+merge
@@ -74,6 +74,8 @@ jobs:
           command: |
             set -e
             idf.py set-target esp32c3
+            # 添加 component manager 依赖（cJSON 5.5+ 需要）
+            idf.py add-dependency "espressif/json__cJSON" || echo "json add-dependency failed, try direct"
             idf.py build
             echo "=== Build success, merging ==="
             python3 $IDF_PATH/components/esptool_py/esptool/esptool.py \
@@ -87,7 +89,6 @@ jobs:
               0x8000 build/partition_table/partition-table.bin \
               0x10000 build/ai_passport.bin
             ls -lh merged-binary.bin
-            # 拷贝到 runner workspace（容器外）
             cp merged-binary.bin /app/${{ github.repository }}/merged-binary.bin
             echo "=== Merged binary copied to workspace ==="
 

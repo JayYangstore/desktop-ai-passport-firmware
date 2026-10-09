@@ -34,6 +34,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <inttypes.h>
 
 static const char *TAG = "dip";
 
@@ -70,10 +71,10 @@ static QueueHandle_t s_input_queue;
 // === 工具函数 ===
 
 static void format_size(uint32_t bytes, char *out, size_t outlen) {
-    if (bytes < 1024) snprintf(out, outlen, "%uB", bytes);
-    else if (bytes < 1024*1024) snprintf(out, outlen, "%uKB", bytes/1024);
-    else if (bytes < (uint32_t)1024*1024*1024) snprintf(out, outlen, "%uMB", bytes/(1024*1024));
-    else snprintf(out, outlen, "%uGB", bytes/(1024*1024*1024));
+    if (bytes < 1024) snprintf(out, outlen, "%" PRIu32 "B", bytes);
+    else if (bytes < 1024*1024) snprintf(out, outlen, "%" PRIu32 "KB", bytes/1024);
+    else if (bytes < (uint32_t)1024*1024*1024) snprintf(out, outlen, "%" PRIu32 "MB", bytes/(1024*1024));
+    else snprintf(out, outlen, "%" PRIu32 "GB", bytes/(1024*1024*1024));
 }
 
 static void format_relative_time(int64_t mtime, char *out, size_t outlen) {
@@ -99,7 +100,7 @@ static esp_err_t load_cache_from_nvs(void) {
     nvs_close(h);
 
     if (err == ESP_OK && s_index.total > 0) {
-        ESP_LOGI(TAG, "Loaded %u entries from NVS cache", s_index.total);
+        ESP_LOGI(TAG, "Loaded %" PRIu32 " entries from NVS cache", (uint32_t)s_index.total);
         return ESP_OK;
     }
     return ESP_ERR_NOT_FOUND;
@@ -114,7 +115,7 @@ static esp_err_t save_cache_to_nvs(void) {
     if (err == ESP_OK) err = nvs_commit(h);
     nvs_close(h);
 
-    ESP_LOGI(TAG, "Saved %u entries to NVS cache", s_index.total);
+    ESP_LOGI(TAG, "Saved %" PRIu32 " entries to NVS cache", (uint32_t)s_index.total);
     return err;
 }
 
@@ -259,7 +260,7 @@ static esp_err_t parse_index_json(const char *json_str, size_t len) {
     }
 
     cJSON_Delete(root);
-    ESP_LOGI(TAG, "Parsed %u entries from JSON", s_index.total);
+    ESP_LOGI(TAG, "Parsed %" PRIu32 " entries from JSON", (uint32_t)s_index.total);
     return ESP_OK;
 }
 
@@ -313,7 +314,7 @@ static esp_err_t http_fetch_index(void) {
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "Fetched %u bytes", total);
+    ESP_LOGI(TAG, "Fetched %" PRIu32 " bytes", (uint32_t)total);
     err = parse_index_json(body, total);
     free(body);
 
@@ -356,8 +357,8 @@ static void list_update_visible(void) {
     if (s_index.total > 0) {
         char rel_time[16];
         format_relative_time(s_index.generated_at, rel_time, sizeof(rel_time));
-        snprintf(buf, sizeof(buf), "桌面 %s  ▲%u/%u",
-                 rel_time, s_selected + 1, s_index.total);
+        snprintf(buf, sizeof(buf), "桌面 %s  ▲%" PRIu32 "/%" PRIu32,
+                 rel_time, (uint32_t)(s_selected + 1), (uint32_t)s_index.total);
     } else {
         snprintf(buf, sizeof(buf), "桌面 无数据");
     }
@@ -586,7 +587,7 @@ esp_err_t dip_init(void) {
     // 加载 NVS 缓存
     if (load_cache_from_nvs() == ESP_OK) {
         s_state = DIP_STATE_READY;
-        ESP_LOGI(TAG, "Have %u cached entries", s_index.total);
+        ESP_LOGI(TAG, "Have %" PRIu32 " cached entries", (uint32_t)s_index.total);
     }
 
     // 建 UI（必须在 LVGL 任务里，先简化：直接调）
