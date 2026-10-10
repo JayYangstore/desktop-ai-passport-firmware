@@ -53,6 +53,7 @@ static lv_obj_t *s_list_rows[DIP_MAX_ENTRIES];   // 10 行 label
 static lv_obj_t *s_status_label;                  // 顶栏 "X天前更新 ▲25/138"
 static lv_obj_t *s_detail_label;                  // 详情页全路径
 static lv_obj_t *s_hint_label;                    // 底部按键提示
+static lv_obj_t *s_voice_label = NULL;            // v3: 语音状态提示 (录音/思考/播放)
 
 // 配网相关
 static EventGroupHandle_t s_wifi_event_group;
@@ -644,8 +645,6 @@ dip_state_t dip_get_state(void) {
 // === 语音 UI (v3) ===
 // (voice_ui_update 定义在文件尾部, dip_main_loop 通过此前置声明调用)
 static void voice_ui_update(void);
-
-static lv_obj_t *s_voice_label = NULL;
 
 void dip_main_loop(void) {
     // 在 LVGL 任务里跑（按键事件队列消费）
