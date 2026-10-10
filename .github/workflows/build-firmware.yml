@@ -109,6 +109,7 @@ jobs:
 
       - name: 🚀 Create Release (on push only)
         if: github.event_name == 'push' && success()
+        continue-on-error: true   # GITHUB_TOKEN 默认无 release 权限, 失败不影响固件产物
         uses: softprops/action-gh-release@v2
         with:
           files: merged-binary.bin
