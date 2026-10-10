@@ -645,6 +645,8 @@ dip_state_t dip_get_state(void) {
 // (voice_ui_update 定义在文件尾部, dip_main_loop 通过此前置声明调用)
 static void voice_ui_update(void);
 
+static lv_obj_t *s_voice_label = NULL;
+
 void dip_main_loop(void) {
     // 在 LVGL 任务里跑（按键事件队列消费）
     dip_input_t in;
@@ -670,14 +672,12 @@ void dip_main_loop(void) {
 
 // === 语音 UI (v3) ===
 
-static lv_obj_t *s_voice_label = NULL;
-
 static void voice_ui_update(void) {
     vl_state_t st = vl_get_state();
     if (!s_voice_label) return;
     const char *txt = NULL;
     switch (st) {
-    case VL_RECORDING: txt = LV_SYMBOL_MIC " REC 松开发送"; break;
+    case VL_RECORDING: txt = LV_SYMBOL_AUDIO " REC 松开发送"; break;
     case VL_THINKING:  txt = LV_SYMBOL_REFRESH " Hermes..."; break;
     case VL_PLAYING:   txt = LV_SYMBOL_PLAY " 播放中"; break;
     default: break;
