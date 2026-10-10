@@ -258,6 +258,7 @@ esp_err_t vl_start_provisioning(void) {
 }
 
 // === 录音 (流式到缓冲) ===
+static esp_err_t rec_start(void);
 
 esp_err_t vl_rec_begin(void) {
     if (s_state != VL_IDLE) return ESP_ERR_INVALID_STATE;
