@@ -109,6 +109,8 @@ bool dip_is_wifi_provisioned(void);
 
 // === 语音钩子 (v3, voice_link 集成) ===
 
+#include "lvgl.h"
+
 // 获取列表屏句柄 (voice UI 提示 label 挂这上面)
 lv_obj_t *dip_get_list_screen(void);
 
