@@ -107,6 +107,14 @@ dip_state_t dip_get_state(void);
 // 查询 WiFi 是否已配网（用于决定是否进 SoftAP 配网页）
 bool dip_is_wifi_provisioned(void);
 
+// === 语音钩子 (v3, voice_link 集成) ===
+
+// 获取列表屏句柄 (voice UI 提示 label 挂这上面)
+lv_obj_t *dip_get_list_screen(void);
+
+// dip_main_loop 每圈调一次 (由 dip 内部调用, 外部勿调)
+void dip_voice_poll(void);
+
 #ifdef __cplusplus
 }
 #endif
