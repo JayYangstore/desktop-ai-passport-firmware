@@ -143,12 +143,27 @@ static const char PROV_PAGE[] =
     "<style>body{font-family:sans-serif;padding:20px;max-width:420px;margin:auto}"
     "input,button{width:100%;padding:12px;margin:6px 0;font-size:16px;"
     "box-sizing:border-box}button{background:#1f6feb;color:#fff;border:0;"
-    "border-radius:8px}</style></head>"
+    "border-radius:8px}h3{margin:14px 0 4px}</style></head>"
     "<body><h2>Hermes 工牌配网</h2>"
-    "<p>填 Mac 上桥的地址 (含端口):</p>"
+    "<h3>1. 家里 WiFi</h3>"
     "<form action=/save method=GET>"
+    "<input name=ssid placeholder='WiFi 名称' required>"
+    "<input name=pass type=password placeholder='WiFi 密码'>"
+    "<h3>2. Mac 桥地址</h3>"
     "<input name=bridge placeholder='http://192.168.1.100:8888' required>"
-    "<button>保存并连接</button></form></body></html>";
+    "<button>保存并重启</button></form></body></html>";
+
+// WiFi 凭据写入 dip namespace (dip 启动时从这里读)
+static esp_err_t save_wifi_creds(const char *ssid, const char *pass) {
+    nvs_handle_t h;
+    esp_err_t err = nvs_open("dip", NVS_READWRITE, &h);
+    if (err != ESP_OK) return err;
+    err = nvs_set_str(h, "ssid", ssid);
+    if (err == ESP_OK) err = nvs_set_str(h, "pass", pass ? pass : "");
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}
 
 // 极简 HTTP server (blocking, 只为配网, 用完即关)
 #include "lwip/sockets.h"
@@ -184,39 +199,75 @@ static void prov_server_task(void *arg) {
         int n = recv(c, req, sizeof(req) - 1, 0);
         if (n <= 0) { close(c); continue; }
 
-        // 解析 GET /save?bridge=xxx
-        char url[160] = {0};
-        char *p = strstr(req, "GET /save?bridge=");
+        // 解析 GET /save?ssid=..&pass=..&bridge=..
+        char qs[320] = {0};
+        char *p = strstr(req, "GET /save?");
         if (p) {
-            p += 17;
+            p += 10;
             char *end = strchr(p, ' ');
-            if (end && (size_t)(end - p) < sizeof(url)) {
+            if (end && (size_t)(end - p) < sizeof(qs)) {
                 size_t l = end - p;
-                memcpy(url, p, l);
-                url[l] = '\0';
-
-                // URL decode (极简: %XX)
-                char dec[96] = {0};
-                size_t di = 0;
-                for (size_t i = 0; url[i] && di < sizeof(dec) - 1; i++) {
-                    if (url[i] == '%' && url[i+1] && url[i+2]) {
-                        char hex[3] = {url[i+1], url[i+2], 0};
-                        dec[di++] = (char)strtol(hex, NULL, 16);
-                        i += 2;
-                    } else if (url[i] == '+') {
-                        dec[di++] = ' ';
-                    } else {
-                        dec[di++] = url[i];
+                memcpy(qs, p, l);
+                qs[l] = '\0';
+            }
+        }
+        if (qs[0]) {
+            // 从 query string 抽参数并 URL 解码
+            char f_ssid[64] = {0}, f_pass[64] = {0}, f_bridge[128] = {0};
+            // 简易解析: 按 & 分割, 找 key=  (顺序无所谓)
+            char *tok = qs;
+            while (tok && *tok) {
+                char *amp = strchr(tok, '&');
+                if (amp) *amp = '\0';
+                if (strncmp(tok, "ssid=", 5) == 0) {
+                    // URL decode 到 f_ssid
+                    char *src = tok + 5;
+                    size_t di = 0;
+                    for (; *src && di < sizeof(f_ssid)-1; src++) {
+                        if (*src == '%' && src[1] && src[2]) {
+                            char hex[3] = {src[1], src[2], 0};
+                            f_ssid[di++] = (char)strtol(hex, NULL, 16);
+                            src += 2;
+                        } else if (*src == '+') f_ssid[di++] = ' ';
+                        else f_ssid[di++] = *src;
                     }
+                    f_ssid[di] = 0;
+                } else if (strncmp(tok, "pass=", 5) == 0) {
+                    char *src = tok + 5;
+                    size_t di = 0;
+                    for (; *src && di < sizeof(f_pass)-1; src++) {
+                        if (*src == '%' && src[1] && src[2]) {
+                            char hex[3] = {src[1], src[2], 0};
+                            f_pass[di++] = (char)strtol(hex, NULL, 16);
+                            src += 2;
+                        } else if (*src == '+') f_pass[di++] = ' ';
+                        else f_pass[di++] = *src;
+                    }
+                    f_pass[di] = 0;
+                } else if (strncmp(tok, "bridge=", 7) == 0) {
+                    char *src = tok + 7;
+                    size_t di = 0;
+                    for (; *src && di < sizeof(f_bridge)-1; src++) {
+                        if (*src == '%' && src[1] && src[2]) {
+                            char hex[3] = {src[1], src[2], 0};
+                            f_bridge[di++] = (char)strtol(hex, NULL, 16);
+                            src += 2;
+                        } else if (*src == '+') f_bridge[di++] = ' ';
+                        else f_bridge[di++] = *src;
+                    }
+                    f_bridge[di] = 0;
                 }
+                tok = amp ? amp + 1 : NULL;
+            }
 
-                if (vl_save_bridge_url(dec) == ESP_OK) {
-                    send(c, "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n"
-                            "已保存! 设备将重启并连接桥...",
-                         70, 0);
+            if (f_ssid[0] && f_bridge[0]) {
+                esp_err_t e1 = save_wifi_creds(f_ssid, f_pass);
+                esp_err_t e2 = vl_save_bridge_url(f_bridge);
+                if (e1 == ESP_OK && e2 == ESP_OK) {
+                    const char *ok_msg = "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close\r\n\r\n已保存! WiFi+桥地址写入成功, 设备 2 秒后重启。重启后自动连 WiFi 并连桥。";
+                    send(c, ok_msg, strlen(ok_msg), 0);
                     close(c);
-                    vTaskDelay(pdMS_TO_TICKS(500));
-                    // 先停配网热点, 让 STA 模式接管; 直接重启最干净
+                    vTaskDelay(pdMS_TO_TICKS(2000));
                     esp_restart();
                     break;
                 }
@@ -238,6 +289,17 @@ static void prov_server_task(void *arg) {
 }
 
 esp_err_t vl_start_provisioning(void) {
+    static bool wifi_stack_ready = false;
+    if (!wifi_stack_ready) {
+        // dip 未配网时不会初始化 WiFi 栈, SoftAP 前必须补齐 (否则 ESP_ERROR_CHECK abort 重启)
+        ESP_ERROR_CHECK(esp_netif_init());
+        ESP_ERROR_CHECK(esp_event_loop_create_default());
+        esp_netif_create_default_wifi_ap();
+        wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+        ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+        wifi_stack_ready = true;
+    }
+
     if (!s_prov_group) s_prov_group = xEventGroupCreate();
 
     wifi_config_t ap_cfg = {0};
