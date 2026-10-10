@@ -47,24 +47,19 @@ jobs:
           cp ../02-sdk/desktop_index_player.h main/desktop_index_player.h
           echo "✅ 复制 desktop_index_player.{c,h}"
 
-          # 2b. 复制语音链路模块 (v3)
-          cp ../02-sdk/voice_link.c main/voice_link.c
-          cp ../02-sdk/voice_link.h main/voice_link.h
-          echo "✅ 复制 voice_link.{c,h}"
-
           # 3. 复制 main.c（用独立文件避免 heredoc 转义问题）
           cp ../02-sdk/main.c main/main.c
           echo "✅ 复制 main.c"
 
           # 4. 修改 CMakeLists.txt 加入我们的 C 源文件 + 启用 HTTP client 组件
-          if grep -q "voice_link" main/CMakeLists.txt; then
-            echo "✅ CMakeLists.txt 已包含 voice_link"
+          if grep -q "desktop_index_player" main/CMakeLists.txt; then
+            echo "✅ CMakeLists.txt 已包含 desktop_index_player"
           else
-            # 加入 desktop_index_player.c + voice_link.c
-            sed -i 's|SRCS "main.c"|SRCS "main.c"\n         "desktop_index_player.c"\n         "voice_link.c"|' main/CMakeLists.txt
+            # 加入 desktop_index_player.c
+            sed -i 's|SRCS "main.c"|SRCS "main.c"\n         "desktop_index_player.c"|' main/CMakeLists.txt
             # 启用 esp_http_client 组件
             sed -i 's|REQUIRES bsp bt esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash|REQUIRES bsp bt esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash esp_http_client json|; s|REQUIRES bsp esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash|REQUIRES bsp esp_event esp_hw_support esp_netif esp_timer esp_wifi nvs_flash esp_http_client json|' main/CMakeLists.txt
-            echo "✅ CMakeLists.txt 已加 desktop_index_player.c + voice_link.c + esp_http_client + json"
+            echo "✅ CMakeLists.txt 已加 desktop_index_player.c + esp_http_client + json"
           fi
 
       # ⭐ 关键步骤：用 action 的 command 在容器里跑完整 build+merge
