@@ -16,6 +16,7 @@
 // 日期: 2026-10-08
 
 #include "desktop_index_player.h"
+#include "voice_link.h"
 
 #include "bsp_button.h"
 #include "bsp_display.h"
@@ -463,6 +464,17 @@ static void button_callback(bsp_btn_t btn, bsp_btn_ev_t ev, void *user) {
 }
 
 static void handle_input(const dip_input_t *in) {
+    // === 语音态优先 (录音/思考/播放中, 语音键自己处理, 其他键忽略) ===
+    vl_state_t vs = vl_get_state();
+    if (vs != VL_IDLE) {
+        if (in->btn == BSP_BTN_OK) {
+            if (in->ev == BSP_BTN_CLICK && vs == VL_RECORDING) vl_rec_stop(true);
+            else if (in->ev == BSP_BTN_LONG && vs == VL_RECORDING) vl_rec_cancel();
+            // THINKING/PLAYING 时按键忽略 (等状态结束, 播放完自动回 IDLE)
+        }
+        return;  // 录音中不响应列表操作
+    }
+
     if (s_show_detail) {
         // 详情页：任意键返回列表
         if (in->ev == BSP_BTN_CLICK) {
@@ -476,6 +488,10 @@ static void handle_input(const dip_input_t *in) {
         // 没数据：长按 OK 触发刷新
         if (in->btn == BSP_BTN_OK && in->ev == BSP_BTN_LONG) {
             dip_trigger_refresh();
+        }
+        // 双击 DOWN = Hermes 桥配网
+        if (in->btn == BSP_BTN_DOWN && in->ev == BSP_BTN_DOUBLE) {
+            vl_start_provisioning();
         }
         return;
     }
@@ -502,12 +518,20 @@ static void handle_input(const dip_input_t *in) {
             if (s_selected + VISIBLE_ROWS < s_index.total) s_selected += VISIBLE_ROWS;
             else if (s_index.total > 0) s_selected = s_index.total - 1;
             s_top = (s_selected / VISIBLE_ROWS) * VISIBLE_ROWS;
+        } else if (in->ev == BSP_BTN_DOUBLE) {
+            // 双击 DOWN = Hermes 桥配网 (热点 HermesPass → 192.168.4.1)
+            vl_start_provisioning();
         }
         list_update_visible();
         break;
 
     case BSP_BTN_OK:
-        if (in->ev == BSP_BTN_CLICK) {
+        if (in->ev == BSP_BTN_PRESS) {
+            // 按住说话: 开始录音
+            if (vl_rec_begin() == ESP_OK) {
+                ESP_LOGI(TAG, "Voice: recording start");
+            }
+        } else if (in->ev == BSP_BTN_CLICK) {
             detail_show();
         } else if (in->ev == BSP_BTN_LONG) {
             // 长按 OK 5 秒触发刷新（简单做法：直接 trigger）
@@ -551,7 +575,13 @@ static void build_list_screen(void) {
     s_hint_label = lv_label_create(s_scr_list);
     lv_obj_set_style_text_color(s_hint_label, lv_color_hex(0x666688), 0);
     lv_obj_set_pos(s_hint_label, 6, 296);
-    lv_label_set_text(s_hint_label, "↑↓ 翻  OK 详情  长按OK 刷新");
+    lv_label_set_text(s_hint_label, "OK按住说话 短按详情 双击DOWN配网");
+
+    // 语音状态提示 (顶部状态栏下方, 默认隐藏)
+    s_voice_label = lv_label_create(s_scr_list);
+    lv_obj_set_style_text_color(s_voice_label, lv_color_hex(0xFFD166), 0);
+    lv_obj_set_pos(s_voice_label, 6, 22);
+    lv_obj_add_flag(s_voice_label, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void build_detail_screen(void) {
@@ -611,15 +641,53 @@ dip_state_t dip_get_state(void) {
     return s_state;
 }
 
+// === 语音 UI (v3) ===
+// (voice_ui_update 定义在文件尾部, dip_main_loop 通过此前置声明调用)
+static void voice_ui_update(void);
+
 void dip_main_loop(void) {
     // 在 LVGL 任务里跑（按键事件队列消费）
     dip_input_t in;
     while (1) {
-        if (xQueueReceive(s_input_queue, &in, pdMS_TO_TICKS(100)) == pdTRUE) {
+        // 语音录音流式读取 (RECORDING 态时每次拉一块 PCM)
+        vl_rec_poll();
+
+        if (xQueueReceive(s_input_queue, &in, pdMS_TO_TICKS(20)) == pdTRUE) {
             if (bsp_lvgl_lock(100)) {
                 handle_input(&in);
+                voice_ui_update();
+                bsp_lvgl_unlock();
+            }
+        } else {
+            // 空转也要刷语音状态 (录音中/播放完)
+            if (bsp_lvgl_lock(100)) {
+                voice_ui_update();
                 bsp_lvgl_unlock();
             }
         }
     }
 }
+
+// === 语音 UI (v3) ===
+
+static lv_obj_t *s_voice_label = NULL;
+
+static void voice_ui_update(void) {
+    vl_state_t st = vl_get_state();
+    if (!s_voice_label) return;
+    const char *txt = NULL;
+    switch (st) {
+    case VL_RECORDING: txt = LV_SYMBOL_MIC " REC 松开发送"; break;
+    case VL_THINKING:  txt = LV_SYMBOL_REFRESH " Hermes..."; break;
+    case VL_PLAYING:   txt = LV_SYMBOL_PLAY " 播放中"; break;
+    default: break;
+    }
+    if (txt) {
+        lv_label_set_text(s_voice_label, txt);
+        lv_obj_clear_flag(s_voice_label, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(s_voice_label, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+lv_obj_t *dip_get_list_screen(void) { return s_scr_list; }
