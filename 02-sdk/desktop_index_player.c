@@ -339,6 +339,10 @@ static void fetch_task(void *arg) {
         } else {
             s_state = DIP_STATE_READY;
         }
+    } else {
+        // WiFi 连不上 -> 自动开配网热点 (兜底, 不依赖按键)
+        ESP_LOGW(TAG, "WiFi failed, auto-start provisioning AP");
+        vl_start_provisioning();
     }
     vTaskDelete(NULL);
 }
