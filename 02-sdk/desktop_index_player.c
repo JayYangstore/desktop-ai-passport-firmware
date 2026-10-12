@@ -131,7 +131,9 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
         ESP_LOGI(TAG, "WiFi connected, got IP");
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        ESP_LOGW(TAG, "WiFi disconnected");
+        int reason = 0;
+        if (event_data) reason = ((wifi_event_sta_disconnected_t*)event_data)->reason;
+        ESP_LOGW(TAG, "WiFi disconnected, reason=%d", reason);
         // 标记失败，但保留缓存显示
         if (s_index.total == 0) s_state = DIP_STATE_WIFI_FAILED;
     }
