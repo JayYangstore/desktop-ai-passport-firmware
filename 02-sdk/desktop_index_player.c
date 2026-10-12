@@ -359,7 +359,7 @@ static void list_update_visible(void) {
     if (s_index.total > 0) {
         char rel_time[16];
         format_relative_time(s_index.generated_at, rel_time, sizeof(rel_time));
-        snprintf(buf, sizeof(buf), "IDX %s  +%u/%u",
+        snprintf(buf, sizeof(buf), "IDX %s  +%" PRIu32 "/%" PRIu32,
                  rel_time, (uint32_t)(s_selected + 1), (uint32_t)s_index.total);
     } else {
         snprintf(buf, sizeof(buf), "IDX no data - check WiFi");
