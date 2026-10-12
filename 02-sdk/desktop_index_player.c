@@ -359,10 +359,10 @@ static void list_update_visible(void) {
     if (s_index.total > 0) {
         char rel_time[16];
         format_relative_time(s_index.generated_at, rel_time, sizeof(rel_time));
-        snprintf(buf, sizeof(buf), "桌面 %s  ▲%" PRIu32 "/%" PRIu32,
+        snprintf(buf, sizeof(buf), "IDX %s  +%u/%u",
                  rel_time, (uint32_t)(s_selected + 1), (uint32_t)s_index.total);
     } else {
-        snprintf(buf, sizeof(buf), "桌面 无数据");
+        snprintf(buf, sizeof(buf), "IDX no data - check WiFi");
     }
     lv_label_set_text(s_status_label, buf);
 
@@ -557,7 +557,7 @@ static void build_list_screen(void) {
     lv_obj_set_style_text_color(s_status_label, lv_color_hex(0x88FF88), 0);
     lv_obj_set_pos(s_status_label, 6, 4);
     lv_obj_set_width(s_status_label, 228);
-    lv_label_set_text(s_status_label, "桌面 加载中...");
+    lv_label_set_text(s_status_label, "Loading...");
 
     // 10 行
     for (int i = 0; i < VISIBLE_ROWS; i++) {
@@ -576,7 +576,7 @@ static void build_list_screen(void) {
     s_hint_label = lv_label_create(s_scr_list);
     lv_obj_set_style_text_color(s_hint_label, lv_color_hex(0x666688), 0);
     lv_obj_set_pos(s_hint_label, 6, 296);
-    lv_label_set_text(s_hint_label, "OK按住说话 短按详情 双击DOWN配网");
+    lv_label_set_text(s_hint_label, "Hold OK talk | OK detail | 2xDOWN wifi");
 
     // 语音状态提示 (顶部状态栏下方, 默认隐藏)
     s_voice_label = lv_label_create(s_scr_list);
@@ -676,9 +676,9 @@ static void voice_ui_update(void) {
     if (!s_voice_label) return;
     const char *txt = NULL;
     switch (st) {
-    case VL_RECORDING: txt = LV_SYMBOL_AUDIO " REC 松开发送"; break;
+    case VL_RECORDING: txt = LV_SYMBOL_AUDIO " REC: release=send"; break;
     case VL_THINKING:  txt = LV_SYMBOL_REFRESH " Hermes..."; break;
-    case VL_PLAYING:   txt = LV_SYMBOL_PLAY " 播放中"; break;
+    case VL_PLAYING:   txt = LV_SYMBOL_PLAY " Playing"; break;
     default: break;
     }
     if (txt) {
