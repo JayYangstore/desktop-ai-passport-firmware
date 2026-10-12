@@ -290,6 +290,11 @@ static void prov_server_task(void *arg) {
 
 esp_err_t vl_start_provisioning(void) {
     static bool wifi_stack_ready = false;
+    // dip 配网后也会初始化 WiFi 栈; 重复 esp_event_loop_create_default 会 abort
+    wifi_mode_t cur_mode;
+    if (esp_wifi_get_mode(&cur_mode) == ESP_OK) {
+        wifi_stack_ready = true;   // 已初始化 (dip 或上次的我们)
+    }
     if (!wifi_stack_ready) {
         // dip 未配网时不会初始化 WiFi 栈, SoftAP 前必须补齐 (否则 ESP_ERROR_CHECK abort 重启)
         ESP_ERROR_CHECK(esp_netif_init());
