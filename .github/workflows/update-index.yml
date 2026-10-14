@@ -114,10 +114,11 @@ jobs:
           COMMIT_MSG="chore(auto): update desktop_index.json - $(date -u +'%Y-%m-%d %H:%M UTC')"
 
           # 用 python 构造 payload (json.dumps 保证合法 JSON)
-          export REMOTE_SHA COMMIT_MSG
+          export REMOTE_SHA COMMIT_MSG SOURCE
           python3 - <<'PY'
           import json, os, base64
-          content = base64.b64encode(open('desktop_index.json','rb').read()).decode()
+          src = os.path.join(os.environ.get('SOURCE','data'), 'desktop_index.json')
+          content = base64.b64encode(open(src,'rb').read()).decode()
           payload = {'message': os.environ['COMMIT_MSG'], 'content': content, 'branch': 'main'}
           if os.environ.get('REMOTE_SHA'):
               payload['sha'] = os.environ['REMOTE_SHA']
