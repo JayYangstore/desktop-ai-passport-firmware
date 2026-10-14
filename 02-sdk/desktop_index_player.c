@@ -197,6 +197,9 @@ static esp_err_t wifi_init_and_connect(void) {
 
     s_state = DIP_STATE_WIFI_CONNECTING;
 
+    ESP_ERROR_CHECK(esp_wifi_connect());   // 关键! start 不会自动连接
+    ESP_LOGW(TAG, "esp_wifi_connect() called, ssid='%s'", ssid);
+
     // 等 10 秒
     EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT,
                                             pdFALSE, pdTRUE, pdMS_TO_TICKS(10000));
