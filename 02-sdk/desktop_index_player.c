@@ -289,8 +289,23 @@ static esp_err_t parse_index_json(const char *json_str, size_t len) {
 }
 
 static esp_err_t http_fetch_index(void) {
+    // 优先从 Mac 桥拉 (局域网, offline-first); 桥没配则回退 GitHub Pages
+    char url[256];
+    nvs_handle_t vh;
+    bool have_bridge = false;
+    if (nvs_open("voice", NVS_READONLY, &vh) == ESP_OK) {
+        size_t len = sizeof(url);
+        if (nvs_get_str(vh, "bridge", url, &len) == ESP_OK && url[0]) {
+            strlcat(url, "/index", sizeof(url));
+            have_bridge = true;
+        }
+        nvs_close(vh);
+    }
+    if (!have_bridge) strlcpy(url, DIP_INDEX_URL, sizeof(url));
+    ESP_LOGW(TAG, "Fetching index from: %s", url);
+
     esp_http_client_config_t cfg = {
-        .url = DIP_INDEX_URL,
+        .url = url,
         .timeout_ms = 10000,
         .skip_cert_common_name_check = true,  // GitHub Pages 证书 OK，但 esp_http_client 默认严格
     };
