@@ -321,6 +321,7 @@ static esp_err_t http_fetch_index(void) {
         esp_http_client_cleanup(client);
         return err;
     }
+    esp_http_client_fetch_headers(client);  // 必须: 先取响应头才能读 body
 
     // 用动态 buffer 接 body
     size_t total = 0;
@@ -343,6 +344,11 @@ static esp_err_t http_fetch_index(void) {
         }
         memcpy(body + total, buf, read);
         total += read;
+    }
+    if (!body || total == 0) {
+        ESP_LOGE(TAG, "Empty response body (status may be non-200)");
+        esp_http_client_cleanup(client);
+        return ESP_FAIL;
     }
     body[total] = '\0';
 
