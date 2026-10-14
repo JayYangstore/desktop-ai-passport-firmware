@@ -111,26 +111,19 @@ jobs:
           # 读远程文件 sha（用于 PUT 冲突检测）
           REMOTE_SHA=$(gh api repos/${{ github.repository }}/contents/$TARGET_FILE --jq '.sha' 2>/dev/null || echo "")
 
-          # base64 编码
-          CONTENT_B64=$(base64 -w 0 < "$JSON_FILE")
-
-          # 构造 JSON payload
-          if [ -n "$REMOTE_SHA" ]; then
-            SHA_FIELD=",\"sha\": \"$REMOTE_SHA\""
-          else
-            SHA_FIELD=""
-          fi
-
           COMMIT_MSG="chore(auto): update desktop_index.json - $(date -u +'%Y-%m-%d %H:%M UTC')"
 
-          # 写到临时文件再 PUT（避免命令行长度限制）
-          cat > /tmp/payload.json << EOF
-          {
-            "message": "$COMMIT_MSG",
-            "content": "$CONTENT_B64",
-            "branch": "main"$SHA_FIELD
-          }
-          EOF
+          # 用 python 构造 payload (json.dumps 保证合法 JSON)
+          export REMOTE_SHA COMMIT_MSG
+          python3 - <<'PY'
+          import json, os, base64
+          content = base64.b64encode(open('desktop_index.json','rb').read()).decode()
+          payload = {'message': os.environ['COMMIT_MSG'], 'content': content, 'branch': 'main'}
+          if os.environ.get('REMOTE_SHA'):
+              payload['sha'] = os.environ['REMOTE_SHA']
+          open('/tmp/payload.json','w').write(json.dumps(payload))
+          print('payload built, sha:', payload.get('sha','(new)'))
+          PY
 
           gh api \
             --method PUT \
