@@ -97,7 +97,7 @@ jobs:
               0x10000 "$APP_BIN"
             ls -lh merged-binary.bin
             APP_ELF=$(ls build/*.elf | grep -v bootloader | head -1)
-            cp "$APP_ELF" ./app.elf
+            cp "$APP_ELF" /app/${{ github.repository }}/app.elf
             cp merged-binary.bin /app/${{ github.repository }}/merged-binary.bin
             echo "=== Merged binary copied to workspace ==="
 
