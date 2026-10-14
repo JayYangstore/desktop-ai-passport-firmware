@@ -134,6 +134,7 @@ jobs:
           rm /tmp/payload.json
 
       - name: ✅ Verify published
+        continue-on-error: true   # 固件仓库未开 Pages, 404 校验必然失败; 真实数据源是 Mac cron 推主页仓库
         env:
           SOURCE: ${{ github.event.inputs.source || 'data' }}
         run: |
