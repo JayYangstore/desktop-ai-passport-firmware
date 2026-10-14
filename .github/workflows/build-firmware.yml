@@ -96,6 +96,8 @@ jobs:
               0x8000 build/partition_table/partition-table.bin \
               0x10000 "$APP_BIN"
             ls -lh merged-binary.bin
+            APP_ELF=$(ls build/*.elf | grep -v bootloader | head -1)
+            cp "$APP_ELF" ./app.elf
             cp merged-binary.bin /app/${{ github.repository }}/merged-binary.bin
             echo "=== Merged binary copied to workspace ==="
 
@@ -103,7 +105,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ai-passport-desktop-index-firmware
-          path: merged-binary.bin
+          path: |
+            merged-binary.bin
+            app.elf
           retention-days: 90
         if: success()
 
