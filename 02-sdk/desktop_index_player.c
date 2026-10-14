@@ -178,6 +178,23 @@ static esp_err_t wifi_init_and_connect(void) {
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
+    // 诊断: 扫描并列出所有可见 AP (含隐藏)
+    wifi_scan_config_t scan_cfg = { .show_hidden = true };
+    if (esp_wifi_scan_start(&scan_cfg, true) == ESP_OK) {
+        uint16_t n = 0;
+        esp_wifi_scan_get_ap_num(&n);
+        wifi_ap_record_t *aps = malloc(sizeof(wifi_ap_record_t) * (n ? n : 1));
+        if (aps) {
+            esp_wifi_scan_get_ap_records(&n, aps);
+            ESP_LOGW(TAG, "=== scan: %u APs visible ===", (uint32_t)n);
+            for (int i = 0; i < n; i++) {
+                ESP_LOGW(TAG, "AP[%d] ssid='%s' ch=%d rssi=%d auth=%d",
+                         i, (char*)aps[i].ssid, aps[i].primary, aps[i].rssi, aps[i].authmode);
+            }
+            free(aps);
+        }
+    }
+
     s_state = DIP_STATE_WIFI_CONNECTING;
 
     // 等 10 秒
