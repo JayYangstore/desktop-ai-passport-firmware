@@ -290,9 +290,9 @@ static esp_err_t parse_index_json(const char *json_str, size_t len) {
 
 static esp_err_t http_fetch_index(void) {
     // 优先从 Mac 桥拉 (局域网, offline-first); 桥没配则回退 GitHub Pages
-    char url[256];
-    nvs_handle_t vh;
+    static char url[256];   // static: 避免 fetch_task 深栈 + 大缓冲
     bool have_bridge = false;
+    nvs_handle_t vh;
     if (nvs_open("voice", NVS_READONLY, &vh) == ESP_OK) {
         size_t len = sizeof(url);
         if (nvs_get_str(vh, "bridge", url, &len) == ESP_OK && url[0]) {
@@ -310,7 +310,9 @@ static esp_err_t http_fetch_index(void) {
         .skip_cert_common_name_check = true,  // GitHub Pages 证书 OK，但 esp_http_client 默认严格
     };
 
+    ESP_LOGW(TAG, "init http client...");
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    ESP_LOGW(TAG, "init done, client=%p", client);
     if (!client) return ESP_FAIL;
 
     esp_err_t err = esp_http_client_open(client, 0);
